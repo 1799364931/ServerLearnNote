@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <fcntl.h>
 #include <iostream>
+#include <sys/syslog.h>
+#include <syslog.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -44,7 +46,7 @@ int main(){
         //利用tee 将收到的内容输出到终端 / 写入file
         
         //tee 的作用是在两个pipe复制数据 即 pipe1 的读端数据 复制到 pipe2的写端 此时缓冲区数据被复制 但不会被读取
-
+        syslog(LOG_NOTICE,"function : %s \n file : %s \n line:%d \n date: %s \n",__FUNCTION__,__FILE__,__LINE__,__DATE__);
         //create pipe
         int pipe_stdout[2];
         int pipe_recv[2];
@@ -62,6 +64,7 @@ int main(){
         splice(pipe_recv[0],NULL,fildfd,NULL,100,0);
 
         close(fildfd);
+        closelog();
     }
 
     close(sockfd);    

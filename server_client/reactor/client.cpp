@@ -13,7 +13,7 @@ int main(){
     sock_addr.sin_addr.s_addr = inet_addr("0.0.0.0");
     sock_addr.sin_port = htons(8080);
     sock_addr.sin_family = AF_INET;
-
+    
     auto ret =  connect(serverfd, (sockaddr*)&sock_addr, sizeof(sock_addr));
     assert(ret >= 0);
 
@@ -26,10 +26,15 @@ int main(){
     //     if(buffer[0] == '#'){
     //         break;
     //     }
-    
+
     //     send(serverfd, buffer, 2, 0);
     // }
-  char buffer[100];
-  send(serverfd, "hhhhhh\n", 100,0);
-  close(serverfd);
+    char buffer[100];
+    recv(serverfd, buffer, 100 , 0);
+    
+    printf("len %ld ",strlen(buffer));
+    for(int i = 0 ;i < strlen(buffer);i++){
+        printf("%c",buffer[i]);
+    }
+    close(serverfd);
 }
