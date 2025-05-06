@@ -1,40 +1,55 @@
-
-#include <arpa/inet.h>
-#include <cassert>
-#include <cstdio>
-#include <cstring>
-#include <netinet/in.h>
+#include <iostream>
+#include <vector>
+#include <thread>
+#include <mutex>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <unistd.h>
-int main(){
-    auto serverfd = socket(AF_INET, SOCK_STREAM, 0);
 
-    sockaddr_in sock_addr;
-    sock_addr.sin_addr.s_addr = inet_addr("0.0.0.0");
-    sock_addr.sin_port = htons(8080);
-    sock_addr.sin_family = AF_INET;
-    
-    auto ret =  connect(serverfd, (sockaddr*)&sock_addr, sizeof(sock_addr));
-    assert(ret >= 0);
+const char* SERVER_IP = "127.0.0.1"; // 服务器地址
+const int SERVER_PORT = 8080;        // 服务器端口
 
-    // close(STDIN_FILENO);
-    // dup(serverfd);
-    
-    // while(true){
-    //     char buffer[2];
-    //     buffer[0] = getchar();
-    //     if(buffer[0] == '#'){
-    //         break;
-    //     }
-
-    //     send(serverfd, buffer, 2, 0);
-    // }
-    char buffer[100];
-    recv(serverfd, buffer, 100 , 0);
-    
-    printf("len %ld ",strlen(buffer));
-    for(int i = 0 ;i < strlen(buffer);i++){
-        printf("%c",buffer[i]);
+void clientTask(int thread_id) {
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        std::cerr << "Thread " << thread_id << ": Socket creation failed\n";
+        return;
     }
-    close(serverfd);
+
+    sockaddr_in serverAddr{};
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(SERVER_PORT);
+    inet_pton(AF_INET, SERVER_IP, &serverAddr.sin_addr);
+
+    if (connect(sockfd, (sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
+        std::cerr << "Thread " << thread_id << ": Connection failed\n";
+        close(sockfd);
+        return;
+    }
+
+    // 发送线程 ID 信息
+    std::string message = "Thread ID: " + std::to_string(thread_id) +"\n";
+    send(sockfd, message.c_str(), message.size(), 0);
+
+    // 接收服务器回显信息
+    char buffer[1024] = {0};
+    recv(sockfd, buffer, sizeof(buffer), 0);
+    std::cout << "Thread " << thread_id << " received: " << buffer << std::endl;
+
+    close(sockfd);
+}
+
+int main() {
+    const int CLIENT_COUNT = 5; // 设定并发客户端数量
+    std::vector<std::thread> clients;
+
+    for (int i = 0; i < CLIENT_COUNT; ++i) {
+        clients.emplace_back(clientTask, i);
+    }
+
+    for (auto& client : clients) {
+        client.join();
+    }
+
+    return 0;
 }
