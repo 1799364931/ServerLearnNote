@@ -1,3 +1,5 @@
+#ifndef THREAD_POOL_H
+#define THREAD_POLL_H
 #include <algorithm>
 #include <any>
 #include <arpa/inet.h>
@@ -71,3 +73,5 @@ template <class Func> class ThreadPool {
         cv_.notify_one();
     }
 };
+
+#endif

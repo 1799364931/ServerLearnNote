@@ -45,6 +45,7 @@ int main() {
 
     for (int i = 0; i < CLIENT_COUNT; ++i) {
         clients.emplace_back(clientTask, i);
+        //usleep(100);
     }
 
     for (auto& client : clients) {

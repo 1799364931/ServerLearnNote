@@ -23,12 +23,13 @@
 #include "epoll_controler.h"
 #include "thread_pool.h"
 
-class Server {
+class ReactorServer {
     int sockfd_;
 
     int ret_;
 
     ThreadPool<std::function<void()>> thread_pool_;
+
     EpollControler epoll_ctler_;
 
     std::vector<int> clientfds_;
@@ -58,14 +59,13 @@ class Server {
     }
 
   public:
-    Server(const char *ip, short port) {
+    ReactorServer(const char *ip, short port) {
         InitLogFile();
         InitSocket(ip, port);
-
         // 增加一个accept事件的监听
         epoll_ctler_.AddEvent(sockfd_, EPOLLIN);
     }
-    ~Server() {
+    ~ReactorServer() {
         close(sockfd_);
         closelog();
     }
@@ -77,6 +77,16 @@ class Server {
             std::vector<epoll_event> events(10);
             auto events_num = epoll_ctler_.WaitEvent(events.data(), 10);
             for (int i = 0; i < events_num; i++) {
+                if (events[i].events & EPOLLHUP ||
+                    events[i].events & EPOLLERR ||
+                    events[i].events & EPOLLRDHUP) {
+                    // 主机掉线了
+                    auto errfd = events[i].data.fd;
+                    syslog(LOG_ERR, "client fd : %d hang up success\n", errfd);
+                    epoll_ctler_.DelEvent(errfd);
+                    close(errfd);
+                    continue;
+                }
                 if (events[i].data.fd == sockfd_ &&
                     events[i].events & EPOLLIN) {
                     AcceptClient();
@@ -84,33 +94,44 @@ class Server {
                 }
                 if (events[i].events & EPOLLIN) {
                     // 有数据读
+                    syslog(LOG_INFO, "fd %d readable\n",events[i].data.fd);
                     auto readfd = events[i].data.fd;
-                    thread_pool_.AddTask([&] {
+                    thread_pool_.AddTask([this,readfd]() -> void {
                         // 读取数据并输出到屏幕中
                         int pipe_stdout[2];
                         auto ret = pipe(pipe_stdout);
                         if (ret < 0) {
+                            
                             syslog(LOG_ERR, "client fd : %d open pipe fail\n",
                                    readfd);
                             return;
                         }
-                        splice(readfd, NULL, pipe_stdout[1], NULL, 100, 0);
+
                         std::lock_guard<std::mutex> lock(stdout_mtx_);
-                        splice(pipe_stdout[0], NULL, STDOUT_FILENO, NULL, 100,
-                               0);
-                        epoll_ctler_.AddEvent(readfd, EPOLLOUT);
+
+                        char buffer[100];
+
+                        ret = recv(readfd, buffer, 1024, 0);
+                        if (ret == 0) {
+                            // close
+                            syslog(LOG_ERR, "client fd : %d hang up\n", readfd);
+                            epoll_ctler_.DelEvent(readfd);
+                            close(readfd);
+                            return;
+                        }
+                        printf("%s", buffer);
+                        epoll_ctler_.AppendEvent(readfd, EPOLLOUT);
+                        close(pipe_stdout[0]);
+                        close(pipe_stdout[1]);
                     });
                 }
                 if (events[i].events & EPOLLOUT) {
                     // 有数据写？
+                    syslog(LOG_INFO, "fd %d writeable\n",events[i].data.fd);
                     auto writefd = events[i].data.fd;
+                    //! 注意lambda函数的捕获是非常容易出问题的！
                     thread_pool_.AddTask(
-                        [&] { send(writefd, "echo success", 20, 0); });
-                }
-                if (events[i].events & EPOLLHUP){
-                    //主机掉线了
-                    syslog(LOG_ERR, "client fd : %d hang up\n",
-                                events[i].data.fd);
+                        [writefd] { send(writefd, "echo success", 20, 0); });
                 }
             }
         }
@@ -127,13 +148,8 @@ class Server {
         } else {
             syslog(LOG_INFO, "Connect success , client fd : %d\n", clientfd);
             clientfds_.push_back(clientfd);
-            epoll_ctler_.AddEvent(clientfd, EPOLLIN);
+            epoll_ctler_.AddEvent(clientfd,
+                                  EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP |EPOLLET);
         }
-        
     }
 };
-
-int main() {
-    Server server("0.0.0.0", 8080);
-    server.ServerRun();
-}
